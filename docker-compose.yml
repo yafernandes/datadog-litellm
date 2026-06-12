@@ -1,0 +1,64 @@
+services:
+  datadog-agent:
+    image: datadog/agent:latest-full
+    container_name: datadog-agent
+    environment:
+      DD_API_KEY: ${DD_API_KEY}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+    volumes:
+      - ./datadog.yaml:/etc/datadog-agent/datadog.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    ports:
+      - "8126:8126/tcp"   # APM
+      - "8125:8125/udp"   # DogStatsD
+    restart: unless-stopped
+
+  litellm:
+    image: litellm/litellm:v1.87.2
+    container_name: litellm
+    env_file:
+      - .env
+    environment:
+      # https://docs.litellm.ai/docs/observability/datadog
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      DD_AGENT_HOST: "datadog-agent"         # hostname or IP of DataDog agent (for ddtrace APM)
+      DD_API_KEY: ${DD_API_KEY}
+      DD_APP_KEY: ${DD_APP_KEY}
+      USE_DDTRACE: "true"
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      DD_SERVICE: "litellm"
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    depends_on:
+      - datadog-agent
+    restart: unless-stopped
+    labels:
+      com.datadoghq.ad.logs: '[{"source": "litellm", "service": "litellm"}]'
+
+  agent-app:
+    build: ./agent-app
+    container_name: agent-app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+      OPENAI_BASE_URL: "http://litellm:4000/v1"
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_PORT: "8126"
+      DD_SERVICE: agent-app
+      DD_ENV: ${DD_ENV:-dev}
+      DD_LLMOBS_ENABLED: 1
+      DD_LLMOBS_ML_APP: agent-app
+      OPENAI_AGENTS_DISABLE_TRACING: "1"
+    depends_on:
+      - litellm
+      - datadog-agent
+    labels:
+      com.datadoghq.ad.logs: '[{"source": "python", "service": "agent-app"}]'

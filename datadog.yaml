@@ -1,0 +1,21 @@
+api_key: ${DD_API_KEY}
+site: ${DD_SITE}
+
+tags:
+  - env:litellm-workshop
+
+apm_config:
+  enabled: true
+  apm_non_local_traffic: true
+
+logs_enabled: true
+logs_config:
+  container_collect_all: true
+
+dogstatsd_non_local_traffic: true
+
+container_exclude:
+  - name:datadog-agent
+
+process_config:
+  enabled: false
