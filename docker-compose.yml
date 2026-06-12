@@ -56,7 +56,6 @@ services:
       DD_ENV: ${DD_ENV:-dev}
       DD_LLMOBS_ENABLED: 1
       DD_LLMOBS_ML_APP: agent-app
-      OPENAI_AGENTS_DISABLE_TRACING: "1"
     depends_on:
       - litellm
       - datadog-agent
