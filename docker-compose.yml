@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
 
   litellm:
-    image: litellm/litellm:v1.87.2
+    image: litellm/litellm:v1.89.2
     container_name: litellm
     env_file:
       - .env
