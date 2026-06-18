@@ -99,6 +99,14 @@ Available model names are defined in `litellm_config.yaml` under `model_list`.
 | Cost tracking | `litellm` | Native Datadog callback (`datadog_cost_management`), sent directly to cloud API |
 | Logs | All containers | Collected by agent automatically; `source:python service:agent-app`, `source:litellm service:litellm` |
 
+## Known issues
+
+### LiteLLM LLM Observability traces show input but no output
+
+LiteLLM's `datadog_llm_observability` callback extracts the completion from `choices[0].message`, which is the chat completions response format. The OpenAI Agents SDK (`openai-agents`) uses the Responses API (`/v1/responses`) by default, whose response format uses `output[].content[].text` instead. The callback does not handle that format, so the output is always empty.
+
+**Fix:** Call `set_default_openai_api("chat_completions")` at startup in `agent-app/main.py` to force the SDK to use `/v1/chat/completions`. This is already applied in this repo.
+
 ## Stopping the stack
 
 ```bash

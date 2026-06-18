@@ -1,16 +1,17 @@
 from datetime import datetime
 
 import chainlit as cl
-from agents import Agent, Runner, function_tool
+from deepagents import create_deep_agent
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o")
 
 
-@function_tool
 def get_weather(location: str) -> str:
     """Get the current weather for a location."""
     return f"Weather in {location}: 22°C, partly cloudy with light winds."
 
 
-@function_tool
 def get_weather_forecast(location: str, days: int = 3) -> str:
     """Get a multi-day weather forecast for a location."""
     lines = [
@@ -20,13 +21,11 @@ def get_weather_forecast(location: str, days: int = 3) -> str:
     return f"{days}-day forecast for {location}:\n" + "\n".join(lines)
 
 
-@function_tool
 def get_current_time() -> str:
     """Get the current date and time."""
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-@function_tool
 def calculate(expression: str) -> str:
     """Evaluate a mathematical expression."""
     import math
@@ -39,38 +38,35 @@ def calculate(expression: str) -> str:
         return f"Error evaluating expression: {exc}"
 
 
-weather_agent = Agent(
-    name="Weather Agent",
-    model="gpt-4o",
-    handoff_description="Specialist for weather conditions and forecasts.",
-    instructions=(
+weather_subagent = {
+    "name": "weather-agent",
+    "description": "Specialist for weather conditions and forecasts.",
+    "system_prompt": (
         "You are a weather specialist. Use your tools to answer weather and forecast "
         "questions. Always state the location clearly in your response."
     ),
-    tools=[get_weather, get_weather_forecast],
-)
+    "tools": [get_weather, get_weather_forecast],
+}
 
-generic_agent = Agent(
-    name="Generic Agent",
-    model="gpt-4o",
-    handoff_description="Handles general questions, time lookups, and math calculations.",
-    instructions=(
+generic_subagent = {
+    "name": "generic-agent",
+    "description": "Handles general questions, time lookups, and math calculations.",
+    "system_prompt": (
         "You are a helpful general assistant. You can look up the current time and "
         "evaluate mathematical expressions. Be concise and direct."
     ),
-    tools=[get_current_time, calculate],
-)
+    "tools": [get_current_time, calculate],
+}
 
-router_agent = Agent(
-    name="Router Agent",
-    model="gpt-4o",
-    instructions=(
-        "You are a routing agent. Hand off every request to the right specialist:\n"
-        "- Weather Agent: weather conditions, forecasts, or any climate question\n"
-        "- Generic Agent: time, math, and all other topics\n"
-        "Never answer directly. Always hand off."
+agent = create_deep_agent(
+    model=llm,
+    subagents=[weather_subagent, generic_subagent],
+    system_prompt=(
+        "You are a routing agent. Delegate every request to the right specialist:\n"
+        "- weather-agent: weather conditions, forecasts, or any climate question\n"
+        "- generic-agent: time, math, and all other topics\n"
+        "Never answer directly. Always delegate to a subagent."
     ),
-    handoffs=[weather_agent, generic_agent],
 )
 
 
@@ -87,10 +83,18 @@ async def on_message(message: cl.Message):
     msg = cl.Message(content="")
     await msg.send()
 
-    result = await Runner.run(router_agent, history)
-    reply = result.final_output
+    async for event in agent.astream_events({"messages": history}, version="v2"):
+        if event["event"] == "on_chat_model_stream":
+            chunk = event["data"]["chunk"]
+            content = chunk.content
+            if isinstance(content, str):
+                await msg.stream_token(content)
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("text"):
+                        await msg.stream_token(block["text"])
 
-    msg.content = reply
     await msg.update()
 
-    cl.user_session.set("history", result.to_input_list())
+    history.append({"role": "assistant", "content": msg.content})
+    cl.user_session.set("history", history)

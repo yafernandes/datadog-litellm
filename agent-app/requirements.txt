@@ -1,3 +1,4 @@
-openai-agents==0.17.5
+deepagents
+langchain-openai
 ddtrace==4.10.4
 chainlit==2.5.5
